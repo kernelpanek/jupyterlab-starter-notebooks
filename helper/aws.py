@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 
 import boto3
+import botocore
 
 json.JSONEncoder.default = lambda self, obj: (
     obj.isoformat() if isinstance(obj, datetime) or isinstance(obj, date) else None
@@ -120,7 +121,13 @@ def perform_aws_operations(aws_ctx_obj, callable_func):
     return aws_data
 
 
-async def get_session_client(session, service):
+async def get_session_client(session, service, config=None):
+    if not config:
+        config = botocore.config.Config(
+            read_timeout=180,
+            connect_timeout=20,
+            retries={"max_attempts": 2}
+        )
     session_client = session.client(service)
     return service, session_client
 
@@ -130,6 +137,7 @@ async def make_all_connections(
     regions=None,
     svc_include=None,
     svc_exclude=None,
+    connection_config=None,
 ):
     if svc_exclude is None:
         svc_exclude = []
@@ -154,7 +162,7 @@ async def make_all_connections(
             elif len(svc_exclude) > 0:
                 services = [svc for svc in services if svc not in svc_exclude]
             deferred_sessions = (
-                get_session_client(sess, service) for service in services
+                get_session_client(sess, service, connection_config) for service in services
             )
             gathered_sessions = await asyncio.gather(
                 *deferred_sessions, return_exceptions=True
@@ -172,6 +180,7 @@ async def aws_connect(
     regions=None,
     svc_include=None,
     svc_exclude=None,
+    connection_config=None,
 ):
     if svc_exclude is None:
         svc_exclude = []
@@ -186,6 +195,7 @@ async def aws_connect(
         regions=regions,
         svc_include=svc_include,
         svc_exclude=svc_exclude,
+        connection_config=connection_config,
     )
 
     return aws_conn
